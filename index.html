@@ -2,19 +2,32 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,minimum-scale=1.0,user-scalable=no,viewport-fit=cover" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-touch-fullscreen" content="yes" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="msapplication-navbutton-color" content="#000000" />
     <title>One Night at the Facility</title>
+    <link rel="manifest" href="data:application/json,%7B%22name%22%3A%22One%20Night%20at%20the%20Facility%22%2C%22short_name%22%3A%22ONATF%22%2C%22display%22%3A%22fullscreen%22%2C%22orientation%22%3A%22landscape%22%2C%22background_color%22%3A%22%23000000%22%2C%22theme_color%22%3A%22%23000000%22%2C%22icons%22%3A%5B%5D%7D" />
 
     <!-- Pixel font -->
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 
     <style>
-        *{box-sizing:border-box;margin:0;padding:0;user-select:none}
+        *{box-sizing:border-box;margin:0;padding:0;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
         :root{--ui-green:#0f0;--hud-font:'Press Start 2P',Courier,monospace}
-        html,body{height:100%;width:100%;background:#000;color:#fff;font-family:var(--hud-font);-webkit-font-smoothing:none}
+        html{height:100%;width:100%;overflow:hidden;position:fixed;background:#000;
+             /* Cover iOS notch/home bar */
+             padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        }
+        body{height:100%;width:100%;background:#000;color:#fff;font-family:var(--hud-font);-webkit-font-smoothing:none;
+             overflow:hidden;position:fixed;top:0;left:0;
+             /* Prevent iOS rubber-band scroll */
+             overscroll-behavior:none;
+             touch-action:none;
+        }
         * { font-family: var(--hud-font) !important; }
 
         /* Screens */
@@ -1262,28 +1275,43 @@
     </video>
 
 <script>
-/* ====== MOUSE PARALLAX — LEFT/RIGHT OFFICE PAN ====== */
+/* ====== MOUSE + TOUCH PARALLAX — LEFT/RIGHT OFFICE PAN ====== */
 (function(){
     const parallax = document.getElementById('office-parallax');
     if (!parallax) return;
-    // Max offset: ±6% of wrapper width (subtle but noticeable)
     const MAX_SHIFT = 6;
     let targetX = 0, currentX = 0;
-    let rafId = null;
 
+    // Mouse (PC)
     document.addEventListener('mousemove', (e) => {
-        if (!parallax) return;
-        // normalise mouse position: -1 (left) to +1 (right)
         const norm = (e.clientX / window.innerWidth) * 2 - 1;
-        // shift: move right when mouse is left (reverse so it feels 3D)
         targetX = -norm * MAX_SHIFT;
     });
 
+    // Touch (phone) — drag finger left/right to pan the office
+    let touchPanX = null;
+    document.addEventListener('touchstart', (e) => {
+        // Only pan when game screen is shown and not in monitor/minigame
+        if (document.getElementById('monitor') && document.getElementById('monitor').classList.contains('active')) return;
+        if (document.getElementById('minigame-screen') && document.getElementById('minigame-screen').style.display !== 'none') return;
+        touchPanX = e.touches[0].clientX;
+    }, {passive:true});
+
+    document.addEventListener('touchmove', (e) => {
+        if (touchPanX === null) return;
+        if (document.getElementById('monitor') && document.getElementById('monitor').classList.contains('active')) return;
+        if (document.getElementById('minigame-screen') && document.getElementById('minigame-screen').style.display !== 'none') return;
+        const dx = e.touches[0].clientX - touchPanX;
+        // Map drag distance to shift: full screen width drag = full MAX_SHIFT
+        targetX = Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, (dx / window.innerWidth) * MAX_SHIFT * 3));
+    }, {passive:true});
+
+    document.addEventListener('touchend', () => { touchPanX = null; }, {passive:true});
+
     function animateParallax(){
-        // smooth lerp
         currentX += (targetX - currentX) * 0.06;
         parallax.style.transform = `translateX(${currentX}%)`;
-        rafId = requestAnimationFrame(animateParallax);
+        requestAnimationFrame(animateParallax);
     }
     animateParallax();
 })();
@@ -3145,9 +3173,16 @@ function startTanks(){
 
 
 <script>
-/* ====== MOBILE: Try to lock to landscape ====== */
+/* ====== MOBILE: Fullscreen + Orientation lock ====== */
 (function(){
-    // Attempt Screen Orientation API lock
+    function goFullscreen(){
+        const el = document.documentElement;
+        try {
+            if (el.requestFullscreen)            el.requestFullscreen({navigationUI:'hide'});
+            else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+            else if (el.mozRequestFullScreen)    el.mozRequestFullScreen();
+        } catch(e){}
+    }
     function tryLockLandscape(){
         try {
             if (screen.orientation && screen.orientation.lock){
@@ -3155,23 +3190,27 @@ function startTanks(){
             }
         } catch(e){}
     }
-    // Try on first user interaction (required by browsers)
-    function onFirstTouch(){
+    // On first touch: go fullscreen + lock landscape
+    function onFirstInteraction(){
+        goFullscreen();
         tryLockLandscape();
-        window.removeEventListener('touchstart', onFirstTouch);
-        window.removeEventListener('click', onFirstTouch);
+        window.removeEventListener('touchstart', onFirstInteraction);
+        window.removeEventListener('click',      onFirstInteraction);
     }
-    window.addEventListener('touchstart', onFirstTouch, {passive:true});
-    window.addEventListener('click', onFirstTouch);
+    window.addEventListener('touchstart', onFirstInteraction, {passive:true});
+    window.addEventListener('click',      onFirstInteraction);
+
+    // Also re-request fullscreen when visibility changes back
+    document.addEventListener('visibilitychange', ()=>{
+        if (!document.hidden) tryLockLandscape();
+    });
 })();
 
 /* ====== MOBILE: Touch controls for mini-games ====== */
 (function(){
-    // Add on-screen D-pad for snake & tanks when on touch device
     function isTouchDevice(){ return ('ontouchstart' in window) || navigator.maxTouchPoints > 0; }
     if (!isTouchDevice()) return;
 
-    // Create simple swipe detection on mg-canvas for snake/tetris
     let touchStartX = 0, touchStartY = 0;
     document.addEventListener('touchstart', (e)=>{
         const t = e.touches[0];
@@ -3183,9 +3222,7 @@ function startTanks(){
         const dx = t.clientX - touchStartX;
         const dy = t.clientY - touchStartY;
         const absDx = Math.abs(dx), absDy = Math.abs(dy);
-        if (Math.max(absDx, absDy) < 20) return; // too small
-
-        // Fire synthetic keyboard event
+        if (Math.max(absDx, absDy) < 20) return;
         let key = '';
         if (absDx > absDy){ key = dx > 0 ? 'ArrowRight' : 'ArrowLeft'; }
         else               { key = dy > 0 ? 'ArrowDown'  : 'ArrowUp'; }
@@ -3193,18 +3230,18 @@ function startTanks(){
         document.dispatchEvent(new KeyboardEvent('keyup',   {key, bubbles:true}));
     }, {passive:true});
 
-    // For tanks: tap to shoot (Space)
-    document.getElementById('mg-canvas').addEventListener('touchend', (e)=>{
-        if (!mgActive || mgType !== 'tanks') return;
-        const t = e.changedTouches[0];
-        const dx = t.clientX - touchStartX;
-        const dy = t.clientY - touchStartY;
-        if (Math.abs(dx) < 15 && Math.abs(dy) < 15){
-            // It was a tap (not a swipe) → shoot
-            document.dispatchEvent(new KeyboardEvent('keydown', {code:'Space', key:' ', bubbles:true}));
-            document.dispatchEvent(new KeyboardEvent('keyup',   {code:'Space', key:' ', bubbles:true}));
-        }
-    }, {passive:true});
+    // Tanks: tap canvas = shoot
+    const mgCanvas = document.getElementById('mg-canvas');
+    if (mgCanvas){
+        mgCanvas.addEventListener('touchend', (e)=>{
+            if (!mgActive || mgType !== 'tanks') return;
+            const t = e.changedTouches[0];
+            if (Math.abs(t.clientX - touchStartX) < 15 && Math.abs(t.clientY - touchStartY) < 15){
+                document.dispatchEvent(new KeyboardEvent('keydown', {code:'Space', key:' ', bubbles:true}));
+                document.dispatchEvent(new KeyboardEvent('keyup',   {code:'Space', key:' ', bubbles:true}));
+            }
+        }, {passive:true});
+    }
 })();
 </script>
 </body>
